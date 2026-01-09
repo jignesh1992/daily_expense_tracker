@@ -36,7 +36,8 @@ class SummaryState {
 
 class SummaryNotifier extends StateNotifier<SummaryState> {
   SummaryNotifier() : super(SummaryState()) {
-    loadDailySummary();
+    // Delay initial load to avoid modifying provider during initialization
+    Future.microtask(() => loadDailySummary(null));
   }
 
   final _apiService = ApiService();

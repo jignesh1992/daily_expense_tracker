@@ -40,7 +40,8 @@ class ExpenseState {
 
 class ExpenseNotifier extends StateNotifier<ExpenseState> {
   ExpenseNotifier(this.ref) : super(ExpenseState()) {
-    _init();
+    // Delay initial load to avoid modifying provider during initialization
+    Future.microtask(() => _init());
   }
 
   final Ref ref;

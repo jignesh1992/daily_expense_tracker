@@ -14,9 +14,6 @@ class ExpenseListScreen extends ConsumerStatefulWidget {
 }
 
 class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
-  DateTime? _filterDate;
-  Category? _filterCategory;
-
   @override
   Widget build(BuildContext context) {
     final expenseState = ref.watch(expenseProvider);
@@ -101,100 +98,102 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
   }
 
   void _showFilterDialog(BuildContext context) {
+    // Capture the notifier reference from parent widget's ref
+    final notifier = ref.read(expenseProvider.notifier);
+    
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Filter Expenses'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: const Text('Filter by Date'),
-              trailing: _filterDate != null
-                  ? Chip(
-                      label: Text(DateFormat('MMM dd, yyyy').format(_filterDate!)),
-                      onDeleted: () {
-                        setState(() {
-                          _filterDate = null;
-                        });
-                        ref.read(expenseProvider.notifier).setFilterDate(null);
-                      },
-                    )
-                  : null,
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: _filterDate ?? DateTime.now(),
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime.now(),
-                );
-                if (picked != null) {
-                  setState(() {
-                    _filterDate = picked;
-                  });
-                  ref.read(expenseProvider.notifier).setFilterDate(picked);
-                  Navigator.of(context).pop();
-                }
-              },
-            ),
-            ListTile(
-              title: const Text('Filter by Category'),
-              trailing: _filterCategory != null
-                  ? Chip(
-                      label: Text(_filterCategory!.displayName),
-                      onDeleted: () {
-                        setState(() {
-                          _filterCategory = null;
-                        });
-                        ref.read(expenseProvider.notifier).setFilterCategory(null);
-                      },
-                    )
-                  : null,
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Select Category'),
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: Category.values.map((category) {
-                        return ListTile(
-                          title: Text(category.displayName),
-                          onTap: () {
-                            setState(() {
-                              _filterCategory = category;
-                            });
-                            ref.read(expenseProvider.notifier).setFilterCategory(category);
-                            Navigator.of(context).pop();
-                            Navigator.of(context).pop();
+      builder: (dialogContext) => Consumer(
+        builder: (context, ref, child) {
+          final expenseState = ref.watch(expenseProvider);
+          final filterDate = expenseState.filterDate;
+          final filterCategory = expenseState.filterCategory;
+          
+          return AlertDialog(
+            title: const Text('Filter Expenses'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  title: const Text('Filter by Date'),
+                  trailing: filterDate != null
+                      ? Chip(
+                          label: Text(DateFormat('MMM dd, yyyy').format(filterDate)),
+                          onDeleted: () {
+                            notifier.setFilterDate(null);
                           },
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                );
-              },
+                        )
+                      : null,
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: dialogContext,
+                      initialDate: filterDate ?? DateTime.now(),
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now(),
+                    );
+                    if (picked != null && dialogContext.mounted) {
+                      notifier.setFilterDate(picked);
+                      Navigator.of(dialogContext).pop();
+                    }
+                  },
+                ),
+                ListTile(
+                  title: const Text('Filter by Category'),
+                  trailing: filterCategory != null
+                      ? Chip(
+                          label: Text(filterCategory.displayName),
+                          onDeleted: () {
+                            notifier.setFilterCategory(null);
+                          },
+                        )
+                      : null,
+                  onTap: () {
+                    showDialog(
+                      context: dialogContext,
+                      builder: (categoryContext) => AlertDialog(
+                        title: const Text('Select Category'),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: Category.values.map((category) {
+                            return ListTile(
+                              title: Text(category.displayName),
+                              onTap: () {
+                                notifier.setFilterCategory(category);
+                                if (categoryContext.mounted) {
+                                  Navigator.of(categoryContext).pop();
+                                }
+                                if (dialogContext.mounted) {
+                                  Navigator.of(dialogContext).pop();
+                                }
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _filterDate = null;
-                _filterCategory = null;
-              });
-              ref.read(expenseProvider.notifier).setFilterDate(null);
-              ref.read(expenseProvider.notifier).setFilterCategory(null);
-              Navigator.of(context).pop();
-            },
-            child: const Text('Clear Filters'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () {
+                  // Clear both filters using the captured notifier
+                  notifier.setFilterDate(null);
+                  notifier.setFilterCategory(null);
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                },
+                child: const Text('Clear Filters'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

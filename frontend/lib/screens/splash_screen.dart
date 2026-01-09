@@ -4,39 +4,53 @@ import 'package:pocketa_expense_tracker/providers/auth_provider.dart';
 import 'package:pocketa_expense_tracker/screens/login_screen.dart';
 import 'package:pocketa_expense_tracker/screens/home_screen.dart';
 
-class SplashScreen extends ConsumerWidget {
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends ConsumerState<SplashScreen> {
+  bool _hasNavigated = false;
+
+  void _navigate(AuthState authState) {
+    if (_hasNavigated || !mounted) return;
+    _hasNavigated = true;
+
+    if (authState.isAuthenticated) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
+    } else {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
 
+    // Listen to auth state changes and navigate when loading completes
     ref.listen<AuthState>(authProvider, (previous, next) {
-      if (!next.isLoading) {
-        if (next.isAuthenticated) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const HomeScreen()),
-          );
-        } else {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const LoginScreen()),
-          );
-        }
+      if (previous?.isLoading == true && !next.isLoading) {
+        _navigate(next);
       }
     });
 
-    if (authState.isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+    // If already loaded (not loading), navigate immediately
+    if (!authState.isLoading && !_hasNavigated) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _navigate(authState);
+      });
     }
 
-    if (authState.isAuthenticated) {
-      return const HomeScreen();
-    }
-
-    return const LoginScreen();
+    return const Scaffold(
+      body: Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
   }
 }

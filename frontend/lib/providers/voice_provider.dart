@@ -54,14 +54,43 @@ class VoiceNotifier extends StateNotifier<VoiceState> {
   }
 
   final _voiceService = VoiceService();
+  bool _isInitializing = false;
 
   Future<void> _init() async {
-    await _voiceService.initialize();
+    try {
+      _isInitializing = true;
+      final initialized = await _voiceService.initialize();
+      if (!initialized) {
+        state = state.copyWith(
+          error: 'Speech recognition initialization failed. Please check permissions and try again.',
+        );
+      }
+    } catch (e) {
+      state = state.copyWith(
+        error: 'Failed to initialize speech recognition: $e',
+      );
+    } finally {
+      _isInitializing = false;
+    }
   }
 
   Future<void> startListening() async {
+    // Clear any previous errors
+    state = state.copyWith(error: null);
+
+    // Try to initialize if not available
+    if (!_voiceService.isAvailable && !_isInitializing) {
+      await _init();
+    }
+
+    // If still not available after initialization attempt, show error
     if (!_voiceService.isAvailable) {
-      state = state.copyWith(error: 'Speech recognition not available');
+      state = state.copyWith(
+        error: 'Speech recognition is not available. Please:\n'
+            '1. Check microphone permissions in Settings\n'
+            '2. Ensure speech recognition is enabled\n'
+            '3. Try again',
+      );
       return;
     }
 
@@ -74,8 +103,10 @@ class VoiceNotifier extends StateNotifier<VoiceState> {
 
     await _voiceService.startListening(
       onResult: (text) async {
-        state = state.copyWith(transcribedText: text);
-        await _parseText(text);
+        if (text.isNotEmpty) {
+          state = state.copyWith(transcribedText: text);
+          await _parseText(text);
+        }
       },
       onError: (error) {
         state = state.copyWith(

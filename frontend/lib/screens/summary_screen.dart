@@ -25,7 +25,10 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen>
         _loadSummaryForTab(_tabController.index);
       }
     });
-    _loadSummaryForTab(0);
+    // Delay loading to avoid modifying provider during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSummaryForTab(0);
+    });
   }
 
   void _loadSummaryForTab(int index) {

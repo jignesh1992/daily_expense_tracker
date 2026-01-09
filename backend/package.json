@@ -11,7 +11,9 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "create-demo-user": "ts-node --transpile-only scripts/create-demo-user.ts",
+    "reset-demo-password": "ts-node --transpile-only scripts/reset-demo-user-password.ts"
   },
   "keywords": ["expense-tracker", "api"],
   "author": "",

@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:pocketa_expense_tracker/services/api_service.dart';
+import 'package:flutter/foundation.dart';
 
 class VoiceService {
   static final VoiceService _instance = VoiceService._internal();
@@ -12,25 +14,49 @@ class VoiceService {
   bool _isAvailable = false;
 
   Future<bool> initialize() async {
-    // Check microphone permission
-    final status = await Permission.microphone.request();
-    if (!status.isGranted) {
+    try {
+      // Check microphone permission first
+      final micStatus = await Permission.microphone.status;
+      if (!micStatus.isGranted) {
+        print('Requesting microphone permission...');
+        final requested = await Permission.microphone.request();
+        if (!requested.isGranted) {
+          print('Microphone permission denied');
+          return false;
+        }
+      }
+      print('Microphone permission granted');
+
+      // Initialize speech recognition
+      _isAvailable = await _speech.initialize(
+        onStatus: (status) {
+          print('Speech recognition status: $status');
+          if (status == 'done' || status == 'notListening') {
+            _isListening = false;
+          }
+        },
+        onError: (error) {
+          print('Speech recognition error: ${error.errorMsg}');
+          _isListening = false;
+        },
+      );
+
+      if (!_isAvailable) {
+        print('Speech recognition initialization failed');
+        if (Platform.isIOS && !kIsWeb && kDebugMode) {
+          print('⚠️ IMPORTANT: Speech recognition does NOT work on iOS Simulator.');
+          print('Please test on a physical iOS device.');
+        }
+      } else {
+        print('Speech recognition initialized successfully');
+      }
+
+      return _isAvailable;
+    } catch (e) {
+      print('Error initializing speech recognition: $e');
+      _isAvailable = false;
       return false;
     }
-
-    _isAvailable = await _speech.initialize(
-      onStatus: (status) {
-        if (status == 'done' || status == 'notListening') {
-          _isListening = false;
-        }
-      },
-      onError: (error) {
-        print('Speech recognition error: $error');
-        _isListening = false;
-      },
-    );
-
-    return _isAvailable;
   }
 
   bool get isAvailable => _isAvailable;
@@ -40,29 +66,80 @@ class VoiceService {
     required Function(String text) onResult,
     Function(String error)? onError,
   }) async {
-    if (!_isAvailable) {
-      final initialized = await initialize();
-      if (!initialized) {
-        onError?.call('Speech recognition not available');
+    try {
+      // Check if speech recognition is available
+      if (!_isAvailable) {
+        print('Speech recognition not initialized, attempting to initialize...');
+        final initialized = await initialize();
+        if (!initialized) {
+          // Check microphone permission
+          final micStatus = await Permission.microphone.status;
+          if (!micStatus.isGranted) {
+            onError?.call('Microphone permission is required. Please grant microphone access in Settings > Privacy & Security > Microphone.');
+            return;
+          }
+          
+          String errorMsg = 'Speech recognition initialization failed.';
+          if (Platform.isIOS && !kIsWeb) {
+            errorMsg += '\n\n⚠️ IMPORTANT: Speech recognition does NOT work on iOS Simulator.\n'
+                'Please test on a physical iOS device.\n\n'
+                'If you are on a physical device, please ensure:\n'
+                '1. Microphone permission is granted in Settings\n'
+                '2. Speech recognition is enabled in Settings > Privacy & Security\n'
+                '3. Your device supports speech recognition';
+          } else {
+            errorMsg += '\n\nPlease ensure:\n'
+                '1. Microphone permission is granted\n'
+                '2. Speech recognition is enabled in device settings\n'
+                '3. Your device supports speech recognition';
+          }
+          onError?.call(errorMsg);
+          return;
+        }
+      }
+
+      if (_isListening) {
+        print('Already listening, ignoring start request');
         return;
       }
-    }
 
-    if (_isListening) {
-      return;
-    }
-
-    _isListening = true;
-    await _speech.listen(
-      onResult: (result) {
-        if (result.finalResult) {
-          _isListening = false;
-          onResult(result.recognizedWords);
+      // Check microphone permission before starting
+      final micStatus = await Permission.microphone.status;
+      if (!micStatus.isGranted) {
+        final requested = await Permission.microphone.request();
+        if (!requested.isGranted) {
+          onError?.call('Microphone permission is required. Please grant microphone access in Settings.');
+          return;
         }
-      },
-      listenFor: const Duration(seconds: 30),
-      pauseFor: const Duration(seconds: 3),
-    );
+      }
+
+      _isListening = true;
+      print('Starting speech recognition...');
+      
+      final available = await _speech.listen(
+        onResult: (result) {
+          print('Speech result: ${result.recognizedWords} (final: ${result.finalResult})');
+          if (result.finalResult) {
+            _isListening = false;
+            onResult(result.recognizedWords);
+          }
+        },
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 3),
+        localeId: 'en_US', // Specify locale for better recognition
+        cancelOnError: false,
+        partialResults: true,
+      );
+
+      if (!available) {
+        _isListening = false;
+        onError?.call('Failed to start listening. Please check microphone permissions and try again.');
+      }
+    } catch (e) {
+      print('Error starting speech recognition: $e');
+      _isListening = false;
+      onError?.call('Error starting speech recognition: $e');
+    }
   }
 
   Future<void> stopListening() async {

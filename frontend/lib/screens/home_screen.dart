@@ -8,23 +8,48 @@ import 'package:pocketa_expense_tracker/screens/voice_input_screen.dart';
 import 'package:pocketa_expense_tracker/screens/manual_entry_screen.dart';
 import 'package:pocketa_expense_tracker/screens/expense_list_screen.dart';
 import 'package:pocketa_expense_tracker/screens/summary_screen.dart';
+import 'package:pocketa_expense_tracker/screens/login_screen.dart';
 import 'package:pocketa_expense_tracker/widgets/expense_card.dart';
 import 'package:pocketa_expense_tracker/widgets/category_chip.dart';
 import 'package:pocketa_expense_tracker/widgets/loading_indicator.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  bool _hasLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Load data once when the screen is first mounted
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_hasLoaded) {
+        _hasLoaded = true;
+        ref.read(summaryProvider.notifier).loadDailySummary(null);
+        ref.read(expenseProvider.notifier).loadExpenses();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
     final summaryState = ref.watch(summaryProvider);
     final expenseState = ref.watch(expenseProvider);
 
-    // Load daily summary on mount
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(summaryProvider.notifier).loadDailySummary(null);
-      ref.read(expenseProvider.notifier).loadExpenses();
+    // Listen to auth state changes and navigate to login when user logs out
+    ref.listen<AuthState>(authProvider, (previous, next) {
+      if (previous?.isAuthenticated == true && !next.isAuthenticated && mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (route) => false,
+        );
+      }
     });
 
     return Scaffold(
@@ -42,7 +67,18 @@ class HomeScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
-              await ref.read(authProvider.notifier).signOut();
+              try {
+                await ref.read(authProvider.notifier).signOut();
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Logout failed: ${e.toString()}'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
             },
           ),
         ],

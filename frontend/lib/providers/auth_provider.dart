@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pocketa_expense_tracker/services/firebase_service.dart';
@@ -37,9 +38,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   final _storageService = StorageService();
   final _apiService = ApiService();
+  StreamSubscription<User?>? _authStateSubscription;
 
   Future<void> _init() async {
-    FirebaseService.authStateChanges.listen((user) {
+    // Listen to auth state changes
+    _authStateSubscription = FirebaseService.authStateChanges.listen((user) {
       state = state.copyWith(user: user, error: null);
       if (user != null) {
         _verifyToken();
@@ -51,6 +54,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (currentUser != null) {
       await _verifyToken();
     }
+  }
+
+  @override
+  void dispose() {
+    _authStateSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _verifyToken() async {
