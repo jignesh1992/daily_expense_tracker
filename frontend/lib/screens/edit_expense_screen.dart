@@ -4,19 +4,33 @@ import 'package:pocketa_expense_tracker/providers/expense_provider.dart';
 import 'package:pocketa_expense_tracker/models/expense.dart';
 import 'package:intl/intl.dart';
 
-class ManualEntryScreen extends ConsumerStatefulWidget {
-  const ManualEntryScreen({super.key});
+class EditExpenseScreen extends ConsumerStatefulWidget {
+  final Expense expense;
+
+  const EditExpenseScreen({
+    super.key,
+    required this.expense,
+  });
 
   @override
-  ConsumerState<ManualEntryScreen> createState() => _ManualEntryScreenState();
+  ConsumerState<EditExpenseScreen> createState() => _EditExpenseScreenState();
 }
 
-class _ManualEntryScreenState extends ConsumerState<ManualEntryScreen> {
+class _EditExpenseScreenState extends ConsumerState<EditExpenseScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _amountController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  Category _selectedCategory = Category.other;
-  DateTime _selectedDate = DateTime.now();
+  late final TextEditingController _amountController;
+  late final TextEditingController _descriptionController;
+  late Category _selectedCategory;
+  late DateTime _selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _amountController = TextEditingController(text: widget.expense.amount.toString());
+    _descriptionController = TextEditingController(text: widget.expense.description ?? '');
+    _selectedCategory = widget.expense.category;
+    _selectedDate = widget.expense.date;
+  }
 
   @override
   void dispose() {
@@ -30,7 +44,7 @@ class _ManualEntryScreenState extends ConsumerState<ManualEntryScreen> {
       context: context,
       initialDate: _selectedDate,
       firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)), // Allow future dates
     );
     if (picked != null) {
       setState(() {
@@ -39,11 +53,12 @@ class _ManualEntryScreenState extends ConsumerState<ManualEntryScreen> {
     }
   }
 
-  Future<void> _submit() async {
+  Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
     try {
-      await ref.read(expenseProvider.notifier).createExpense(
+      await ref.read(expenseProvider.notifier).updateExpense(
+            id: widget.expense.id,
             amount: double.parse(_amountController.text),
             category: _selectedCategory,
             description: _descriptionController.text.isEmpty
@@ -55,7 +70,7 @@ class _ManualEntryScreenState extends ConsumerState<ManualEntryScreen> {
       if (mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Expense added successfully')),
+          const SnackBar(content: Text('Expense updated successfully')),
         );
       }
     } catch (e) {
@@ -67,11 +82,25 @@ class _ManualEntryScreenState extends ConsumerState<ManualEntryScreen> {
     }
   }
 
+  void _cancel() {
+    Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add Expense'),
+        title: const Text('Edit Expense'),
+        actions: [
+          TextButton(
+            onPressed: _cancel,
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: _save,
+            child: const Text('Save'),
+          ),
+        ],
       ),
       body: Form(
         key: _formKey,
@@ -146,22 +175,41 @@ class _ManualEntryScreenState extends ConsumerState<ManualEntryScreen> {
               ),
             ),
             const SizedBox(height: 32),
-            // Submit Button
-            OutlinedButton(
-              onPressed: _submit,
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+            // Save and Cancel Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _cancel,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('Cancel'),
+                  ),
                 ),
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                side: BorderSide(
-                  color: Theme.of(context).colorScheme.primary,
-                  width: 1,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _save,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      side: BorderSide(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 1,
+                      ),
+                    ),
+                    child: const Text('Save'),
+                  ),
                 ),
-              ),
-              child: const Text('Save Expense'),
+              ],
             ),
           ],
         ),

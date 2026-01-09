@@ -66,10 +66,51 @@ class LocalDbService {
     );
   }
 
-  Future<List<Expense>> getAllExpenses() async {
+  Future<List<Expense>> getAllExpenses({
+    DateTime? date,
+    Category? category,
+    String? userId,
+  }) async {
     final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query('expenses', orderBy: 'date DESC');
-    return maps.map((map) => _mapToExpense(map)).toList();
+    final List<String> whereConditions = [];
+    final List<dynamic> whereArgs = [];
+
+    // Filter by userId if provided, otherwise show all expenses
+    // This allows showing expenses even if userId is not set or doesn't match
+    if (userId != null && userId.isNotEmpty) {
+      whereConditions.add('userId = ?');
+      whereArgs.add(userId);
+    }
+    // If userId is null/empty, don't filter by userId (show all expenses)
+
+    if (date != null) {
+      // Filter by date (compare only date part, not time)
+      // Use UTC dates for filtering to match how dates are stored
+      final filterDateUtc = DateTime.utc(date.year, date.month, date.day);
+      final startOfDay = filterDateUtc;
+      final endOfDay = DateTime.utc(date.year, date.month, date.day, 23, 59, 59, 999);
+      whereConditions.add('date >= ? AND date <= ?');
+      whereArgs.add(startOfDay.toIso8601String());
+      whereArgs.add(endOfDay.toIso8601String());
+    }
+
+    if (category != null) {
+      whereConditions.add('category = ?');
+      whereArgs.add(category.name);
+    }
+
+    final whereClause = whereConditions.isNotEmpty ? whereConditions.join(' AND ') : null;
+    print('Querying expenses - whereClause: $whereClause, whereArgs: $whereArgs');
+    final List<Map<String, dynamic>> maps = await db.query(
+      'expenses',
+      where: whereClause,
+      whereArgs: whereArgs.isNotEmpty ? whereArgs : null,
+      orderBy: 'createdAt DESC', // Order by createdAt DESC to show latest first
+    );
+    print('Found ${maps.length} expenses in database');
+    final expenses = maps.map((map) => _mapToExpense(map)).toList();
+    print('Mapped to ${expenses.length} expense objects');
+    return expenses;
   }
 
   Future<Expense?> getExpense(String id) async {
@@ -128,15 +169,27 @@ class LocalDbService {
   }
 
   Expense _mapToExpense(Map<String, dynamic> map) {
+    // Parse the date string and extract date components from UTC
+    final dateString = map['date'] as String;
+    final parsedDate = DateTime.parse(dateString);
+    
+    // Extract date components from UTC to avoid timezone shifts
+    final utcDate = parsedDate.isUtc ? parsedDate : parsedDate.toUtc();
+    final localDate = DateTime(
+      utcDate.year,
+      utcDate.month,
+      utcDate.day,
+    );
+    
     return Expense(
       id: map['id'] as String,
       userId: map['userId'] as String,
       amount: map['amount'] as double,
       category: Category.fromString(map['category'] as String),
       description: map['description'] as String?,
-      date: DateTime.parse(map['date'] as String),
-      createdAt: DateTime.parse(map['createdAt'] as String),
-      updatedAt: DateTime.parse(map['updatedAt'] as String),
+      date: localDate,
+      createdAt: DateTime.parse(map['createdAt'] as String).toLocal(),
+      updatedAt: DateTime.parse(map['updatedAt'] as String).toLocal(),
     );
   }
 }

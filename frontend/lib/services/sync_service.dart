@@ -43,14 +43,21 @@ class SyncService {
 
         switch (operation) {
           case 'create':
+            final createDate = DateTime.parse(data['date'] as String);
+            final normalizedCreateDate = DateTime(createDate.year, createDate.month, createDate.day);
             await _api.createExpense(
               amount: data['amount'] as double,
               category: Category.fromString(data['category'] as String),
               description: data['description'] as String?,
-              date: DateTime.parse(data['date'] as String),
+              date: normalizedCreateDate,
             );
             break;
           case 'update':
+            DateTime? normalizedUpdateDate;
+            if (data['date'] != null) {
+              final updateDate = DateTime.parse(data['date'] as String);
+              normalizedUpdateDate = DateTime(updateDate.year, updateDate.month, updateDate.day);
+            }
             await _api.updateExpense(
               id: expenseId,
               amount: data['amount'] as double?,
@@ -58,7 +65,7 @@ class SyncService {
                   ? Category.fromString(data['category'] as String)
                   : null,
               description: data['description'] as String?,
-              date: data['date'] != null ? DateTime.parse(data['date'] as String) : null,
+              date: normalizedUpdateDate,
             );
             break;
           case 'delete':

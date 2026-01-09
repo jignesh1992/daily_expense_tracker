@@ -9,6 +9,9 @@ import 'package:pocketa_expense_tracker/screens/manual_entry_screen.dart';
 import 'package:pocketa_expense_tracker/screens/expense_list_screen.dart';
 import 'package:pocketa_expense_tracker/screens/summary_screen.dart';
 import 'package:pocketa_expense_tracker/screens/login_screen.dart';
+import 'package:pocketa_expense_tracker/screens/edit_expense_screen.dart';
+import 'package:pocketa_expense_tracker/models/expense.dart';
+import 'package:pocketa_expense_tracker/services/local_db_service.dart';
 import 'package:pocketa_expense_tracker/widgets/expense_card.dart';
 import 'package:pocketa_expense_tracker/widgets/category_chip.dart';
 import 'package:pocketa_expense_tracker/widgets/loading_indicator.dart';
@@ -22,6 +25,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _hasLoaded = false;
+  List<Expense> _todayExpenses = [];
 
   @override
   void initState() {
@@ -32,8 +36,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _hasLoaded = true;
         ref.read(summaryProvider.notifier).loadDailySummary(null);
         ref.read(expenseProvider.notifier).loadExpenses();
+        _loadTodayExpenses();
       }
     });
+  }
+
+  Future<void> _loadTodayExpenses() async {
+    // Load today's expenses directly from DB, ignoring any filters
+    final localDb = LocalDbService();
+    final today = DateTime.now();
+    final currentUserId = ref.read(authProvider).user?.uid;
+    
+    try {
+      final expenses = await localDb.getAllExpenses(
+        date: today,
+        category: null, // No category filter
+        userId: null, // Get all expenses first
+      );
+      
+      // Filter by userId if available
+      final userExpenses = currentUserId != null && currentUserId.isNotEmpty
+          ? expenses.where((e) => e.userId == currentUserId).toList()
+          : expenses;
+      
+      // Sort by createdAt DESC
+      userExpenses.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      
+      setState(() {
+        _todayExpenses = userExpenses;
+      });
+    } catch (e) {
+      print('Error loading today expenses: $e');
+    }
   }
 
   @override
@@ -41,6 +75,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final authState = ref.watch(authProvider);
     final summaryState = ref.watch(summaryProvider);
     final expenseState = ref.watch(expenseProvider);
+    
+    // Refresh today's expenses when expense list changes (but ignore filters)
+    ref.listen<ExpenseState>(expenseProvider, (previous, next) {
+      if (previous?.expenses != next.expenses) {
+        _loadTodayExpenses();
+      }
+    });
 
     // Listen to auth state changes and navigate to login when user logs out
     ref.listen<AuthState>(authProvider, (previous, next) {
@@ -54,7 +95,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pocketa Expense Tracker'),
+        title: const Text('Pocketa: Expense Tracker'),
         actions: [
           IconButton(
             icon: const Icon(Icons.bar_chart),
@@ -87,6 +128,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onRefresh: () async {
           await ref.read(expenseProvider.notifier).loadExpenses();
           await ref.read(summaryProvider.notifier).loadDailySummary(null);
+          await _loadTodayExpenses();
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -210,22 +252,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               const SizedBox(height: 8),
               if (expenseState.isLoading)
                 const LoadingIndicator()
-              else if (expenseState.expenses.isEmpty)
+              else if (_todayExpenses.isEmpty)
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Center(
                       child: Text(
-                        'No expenses yet',
+                        'No expenses today',
                         style: Theme.of(context).textTheme.bodyLarge,
                       ),
                     ),
                   ),
                 )
               else
-                ...expenseState.expenses.take(5).map((expense) => Padding(
+                ..._todayExpenses.take(5).map((expense) => Padding(
                       padding: const EdgeInsets.only(bottom: 8),
-                      child: ExpenseCard(expense: expense),
+                      child: ExpenseCard(
+                        expense: expense,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => EditExpenseScreen(expense: expense),
+                            ),
+                          );
+                        },
+                      ),
                     )),
             ],
           ),

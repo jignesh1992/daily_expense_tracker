@@ -53,26 +53,45 @@ class Expense {
   });
 
   factory Expense.fromJson(Map<String, dynamic> json) {
+    // Parse the date string and extract just the date part (YYYY-MM-DD)
+    // This avoids timezone conversion issues
+    final dateString = json['date'] as String;
+    final parsedDate = DateTime.parse(dateString);
+    
+    // Extract date components from UTC to avoid timezone shifts
+    // Then create a local date with those components
+    final utcDate = parsedDate.isUtc ? parsedDate : parsedDate.toUtc();
+    final localDate = DateTime(
+      utcDate.year,
+      utcDate.month,
+      utcDate.day,
+    );
+    
     return Expense(
       id: json['id'] as String,
       userId: json['userId'] as String,
       amount: (json['amount'] as num).toDouble(),
       category: Category.fromString(json['category'] as String),
       description: json['description'] as String?,
-      date: DateTime.parse(json['date'] as String),
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      date: localDate,
+      createdAt: DateTime.parse(json['createdAt'] as String).toLocal(),
+      updatedAt: DateTime.parse(json['updatedAt'] as String).toLocal(),
     );
   }
 
   Map<String, dynamic> toJson() {
+    // Convert date to UTC midnight to avoid timezone shifts
+    // This ensures Jan 6 stays Jan 6 regardless of timezone
+    final utcDate = DateTime.utc(date.year, date.month, date.day);
+    
     return {
       'id': id,
       'userId': userId,
       'amount': amount,
       'category': category.name,
       'description': description,
-      'date': date.toIso8601String(),
+      // Send as UTC midnight to avoid timezone conversion issues
+      'date': utcDate.toIso8601String(),
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };

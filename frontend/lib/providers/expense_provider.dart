@@ -4,6 +4,7 @@ import 'package:pocketa_expense_tracker/services/api_service.dart';
 import 'package:pocketa_expense_tracker/services/local_db_service.dart';
 import 'package:pocketa_expense_tracker/services/sync_service.dart';
 import 'package:pocketa_expense_tracker/providers/auth_provider.dart';
+import 'package:pocketa_expense_tracker/providers/summary_provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 class ExpenseState {
@@ -27,13 +28,15 @@ class ExpenseState {
     String? error,
     DateTime? filterDate,
     Category? filterCategory,
+    bool clearFilterDate = false,
+    bool clearFilterCategory = false,
   }) {
     return ExpenseState(
       expenses: expenses ?? this.expenses,
       isLoading: isLoading ?? this.isLoading,
       error: error,
-      filterDate: filterDate ?? this.filterDate,
-      filterCategory: filterCategory ?? this.filterCategory,
+      filterDate: clearFilterDate ? null : (filterDate ?? this.filterDate),
+      filterCategory: clearFilterCategory ? null : (filterCategory ?? this.filterCategory),
     );
   }
 }
@@ -61,28 +64,88 @@ class ExpenseNotifier extends StateNotifier<ExpenseState> {
 
       List<Expense> expenses;
 
+      final currentUserId = ref.read(authProvider).user?.uid;
+      print('Loading expenses - isOnline: $isOnline, userId: $currentUserId');
+      
       if (isOnline) {
         // Try to fetch from API
         try {
-          expenses = await _apiService.getExpenses(
+          // Always fetch all expenses first, then apply filters client-side
+          // This ensures filtering works even if API doesn't support it correctly
+          final allExpenses = await _apiService.getExpenses();
+          print('Fetched ${allExpenses.length} expenses from API');
+          
+          // Debug: Check userIds in expenses
+          if (allExpenses.isNotEmpty) {
+            final uniqueUserIds = allExpenses.map((e) => e.userId).toSet();
+            print('Expenses have userIds: $uniqueUserIds');
+            print('Current userId: $currentUserId');
+          }
+          
+          // Filter by userId first (only show current user's expenses)
+          // If userId is null or empty, show all expenses (for backward compatibility)
+          List<Expense> userExpenses;
+          if (currentUserId != null && currentUserId.isNotEmpty) {
+            userExpenses = allExpenses.where((e) => e.userId == currentUserId).toList();
+            print('Filtered to ${userExpenses.length} expenses for userId: $currentUserId');
+            
+            // If no expenses match userId, show all expenses (backward compatibility)
+            // This handles cases where expenses were created before userId filtering
+            if (userExpenses.isEmpty && allExpenses.isNotEmpty) {
+              print('No expenses match userId, showing all expenses for backward compatibility');
+              userExpenses = allExpenses;
+            }
+          } else {
+            // If no userId, show all expenses (backward compatibility)
+            userExpenses = allExpenses;
+            print('No userId, showing all ${userExpenses.length} expenses');
+          }
+          
+          // Save user's expenses to local DB
+          // Update userId if it doesn't match (for backward compatibility)
+          for (final expense in userExpenses) {
+            Expense expenseToSave = expense;
+            if (currentUserId != null && currentUserId.isNotEmpty && expense.userId != currentUserId) {
+              // Update expense with current userId
+              expenseToSave = expense.copyWith(userId: currentUserId);
+            }
+            await _localDb.insertExpense(expenseToSave, synced: true);
+          }
+          
+          // Then apply date/category filtering for display
+          expenses = _applyFilters(userExpenses, state.filterDate, state.filterCategory);
+          print('After filters: ${expenses.length} expenses');
+        } catch (e) {
+          print('Error loading expenses from API: $e');
+          // Fallback to local DB - show all expenses
+          expenses = await _localDb.getAllExpenses(
             date: state.filterDate,
             category: state.filterCategory,
+            userId: null, // Don't filter by userId to show all expenses
           );
-          // Save to local DB
-          for (final expense in expenses) {
-            await _localDb.insertExpense(expense, synced: true);
-          }
-        } catch (e) {
-          // Fallback to local DB
-          expenses = await _localDb.getAllExpenses();
+          print('Loaded ${expenses.length} expenses from local DB (fallback)');
         }
       } else {
-        // Use local DB
-        expenses = await _localDb.getAllExpenses();
+        // Use local DB - show all expenses
+        expenses = await _localDb.getAllExpenses(
+          date: state.filterDate,
+          category: state.filterCategory,
+          userId: null, // Don't filter by userId to show all expenses
+        );
+        print('Loaded ${expenses.length} expenses from local DB (offline)');
       }
 
+      print('Final expenses count: ${expenses.length}');
+      print('Active filters - date: ${state.filterDate}, category: ${state.filterCategory}');
+      
+      // If no expenses found and filters are active, log a warning
+      if (expenses.isEmpty && (state.filterDate != null || state.filterCategory != null)) {
+        print('WARNING: No expenses found but filters are active!');
+      }
+      
       state = state.copyWith(expenses: expenses, isLoading: false);
     } catch (e) {
+      print('Error in loadExpenses: $e');
       state = state.copyWith(
         isLoading: false,
         error: e.toString(),
@@ -101,32 +164,43 @@ class ExpenseNotifier extends StateNotifier<ExpenseState> {
       final connectivityResult = await Connectivity().checkConnectivity();
       final isOnline = connectivityResult != ConnectivityResult.none;
 
+      // Normalize date to UTC midnight to avoid timezone issues
+      // Extract date components from local date and create UTC date
+      final normalizedDate = date != null
+          ? DateTime.utc(date.year, date.month, date.day)
+          : DateTime.now();
+
       Expense expense;
       if (isOnline) {
         expense = await _apiService.createExpense(
           amount: amount,
           category: category,
           description: description,
-          date: date,
+          date: normalizedDate,
         );
         await _localDb.insertExpense(expense, synced: true);
       } else {
         // Create locally and add to sync queue
+        final now = DateTime.now();
         expense = Expense(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          id: now.millisecondsSinceEpoch.toString(),
           userId: ref.read(authProvider).user?.uid ?? '',
           amount: amount,
           category: category,
           description: description,
-          date: date ?? DateTime.now(),
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
+          date: normalizedDate,
+          createdAt: now,
+          updatedAt: now,
         );
         await _localDb.insertExpense(expense, synced: false);
         await _localDb.addToSyncQueue(expense.id, 'create', expense.toJson());
       }
 
       await loadExpenses();
+      // Wait a bit to ensure expenses are loaded, then refresh summary
+      await Future.delayed(const Duration(milliseconds: 100));
+      // Refresh today's summary after creating expense
+      ref.read(summaryProvider.notifier).loadDailySummary(null);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -148,6 +222,13 @@ class ExpenseNotifier extends StateNotifier<ExpenseState> {
       final connectivityResult = await Connectivity().checkConnectivity();
       final isOnline = connectivityResult != ConnectivityResult.none;
 
+      // Normalize date to UTC midnight to avoid timezone issues
+      // Extract date components from local date and create UTC date
+      DateTime? normalizedDate;
+      if (date != null) {
+        normalizedDate = DateTime.utc(date.year, date.month, date.day);
+      }
+
       Expense expense;
       if (isOnline) {
         expense = await _apiService.updateExpense(
@@ -155,7 +236,7 @@ class ExpenseNotifier extends StateNotifier<ExpenseState> {
           amount: amount,
           category: category,
           description: description,
-          date: date,
+          date: normalizedDate,
         );
         await _localDb.updateExpense(expense, synced: true);
       } else {
@@ -167,7 +248,7 @@ class ExpenseNotifier extends StateNotifier<ExpenseState> {
           amount: amount ?? existing.amount,
           category: category ?? existing.category,
           description: description ?? existing.description,
-          date: date ?? existing.date,
+          date: normalizedDate ?? existing.date,
           updatedAt: DateTime.now(),
         );
         await _localDb.updateExpense(expense, synced: false);
@@ -175,6 +256,10 @@ class ExpenseNotifier extends StateNotifier<ExpenseState> {
       }
 
       await loadExpenses();
+      // Wait a bit to ensure expenses are loaded, then refresh summary
+      await Future.delayed(const Duration(milliseconds: 100));
+      // Refresh today's summary after updating expense
+      ref.read(summaryProvider.notifier).loadDailySummary(null);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -203,6 +288,10 @@ class ExpenseNotifier extends StateNotifier<ExpenseState> {
       }
 
       await loadExpenses();
+      // Wait a bit to ensure expenses are loaded, then refresh summary
+      await Future.delayed(const Duration(milliseconds: 100));
+      // Refresh today's summary after deleting expense
+      ref.read(summaryProvider.notifier).loadDailySummary(null);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -213,18 +302,66 @@ class ExpenseNotifier extends StateNotifier<ExpenseState> {
   }
 
   Future<void> setFilterDate(DateTime? date) async {
-    state = state.copyWith(filterDate: date);
+    // Keep filter date as local date for UI display
+    // The filtering logic will handle UTC conversion
+    DateTime? normalizedDate;
+    if (date != null) {
+      // Keep as local date for filtering comparison
+      normalizedDate = DateTime(date.year, date.month, date.day);
+    }
+    state = state.copyWith(
+      filterDate: normalizedDate,
+      clearFilterDate: date == null,
+    );
     await loadExpenses();
   }
 
   Future<void> setFilterCategory(Category? category) async {
-    state = state.copyWith(filterCategory: category);
+    state = state.copyWith(
+      filterCategory: category,
+      clearFilterCategory: category == null,
+    );
     await loadExpenses();
   }
 
   Future<void> sync() async {
     await _syncService.syncAll();
     await loadExpenses();
+  }
+
+  List<Expense> _applyFilters(
+    List<Expense> expenses,
+    DateTime? filterDate,
+    Category? filterCategory,
+  ) {
+    var filtered = expenses;
+    print('Applying filters - initial count: ${filtered.length}, filterDate: $filterDate, filterCategory: $filterCategory');
+
+    // Filter by date (compare only date part, not time)
+    if (filterDate != null) {
+      final filterYear = filterDate.year;
+      final filterMonth = filterDate.month;
+      final filterDay = filterDate.day;
+      
+      filtered = filtered.where((expense) {
+        return expense.date.year == filterYear &&
+               expense.date.month == filterMonth &&
+               expense.date.day == filterDay;
+      }).toList();
+      print('After date filter: ${filtered.length} expenses');
+    }
+
+    // Filter by category
+    if (filterCategory != null) {
+      filtered = filtered.where((expense) => expense.category == filterCategory).toList();
+      print('After category filter: ${filtered.length} expenses');
+    }
+
+    // Sort by createdAt DESC to show latest first
+    filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    print('Final filtered count: ${filtered.length} expenses');
+    return filtered;
   }
 }
 

@@ -30,7 +30,7 @@ class ExpenseCard extends StatelessWidget {
             if (expense.description != null && expense.description!.isNotEmpty)
               Text(expense.description!),
             Text(
-              DateFormat('MMM dd, yyyy • hh:mm a').format(expense.date),
+              DateFormat('MMM dd, yyyy').format(expense.date),
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

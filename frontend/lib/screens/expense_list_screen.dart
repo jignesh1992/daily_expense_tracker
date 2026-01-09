@@ -5,6 +5,7 @@ import 'package:pocketa_expense_tracker/providers/expense_provider.dart';
 import 'package:pocketa_expense_tracker/models/expense.dart';
 import 'package:pocketa_expense_tracker/widgets/expense_card.dart';
 import 'package:pocketa_expense_tracker/widgets/loading_indicator.dart';
+import 'package:pocketa_expense_tracker/screens/edit_expense_screen.dart';
 
 class ExpenseListScreen extends ConsumerStatefulWidget {
   const ExpenseListScreen({super.key});
@@ -18,12 +19,43 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
   Widget build(BuildContext context) {
     final expenseState = ref.watch(expenseProvider);
 
+    final hasActiveFilters = expenseState.filterDate != null || expenseState.filterCategory != null;
+    
     return Scaffold(
       appBar: AppBar(
-        title: const Text('All Expenses'),
+        title: Text(hasActiveFilters ? 'Filtered Expenses' : 'All Expenses'),
         actions: [
+          if (hasActiveFilters)
+            IconButton(
+              icon: const Icon(Icons.clear_all),
+              tooltip: 'Clear Filters',
+              onPressed: () {
+                ref.read(expenseProvider.notifier).setFilterDate(null);
+                ref.read(expenseProvider.notifier).setFilterCategory(null);
+              },
+            ),
           IconButton(
-            icon: const Icon(Icons.filter_list),
+            icon: Stack(
+              children: [
+                const Icon(Icons.filter_list),
+                if (hasActiveFilters)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 8,
+                        minHeight: 8,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             onPressed: () => _showFilterDialog(context),
           ),
         ],
@@ -50,9 +82,31 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
                 )
               : RefreshIndicator(
                   onRefresh: () => ref.read(expenseProvider.notifier).loadExpenses(),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: expenseState.expenses.length,
+                  child: Column(
+                    children: [
+                      if (hasActiveFilters)
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          color: Theme.of(context).colorScheme.surfaceVariant,
+                          child: Row(
+                            children: [
+                              Icon(Icons.info_outline, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Showing ${expenseState.expenses.length} expense(s)',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      Expanded(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: expenseState.expenses.length,
                     itemBuilder: (context, index) {
                       final expense = expenseState.expenses[index];
                       return Dismissible(
@@ -88,10 +142,19 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
                         },
                         child: ExpenseCard(
                           expense: expense,
-                          onTap: () => _showEditDialog(context, expense),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => EditExpenseScreen(expense: expense),
+                              ),
+                            );
+                          },
                         ),
                       );
                     },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
     );
@@ -129,7 +192,7 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
                       context: dialogContext,
                       initialDate: filterDate ?? DateTime.now(),
                       firstDate: DateTime(2020),
-                      lastDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)), // Allow future dates
                     );
                     if (picked != null && dialogContext.mounted) {
                       notifier.setFilterDate(picked);
@@ -198,11 +261,4 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
     );
   }
 
-  void _showEditDialog(BuildContext context, Expense expense) {
-    // Edit dialog implementation would go here
-    // For now, just show a snackbar
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Edit functionality coming soon')),
-    );
-  }
 }
