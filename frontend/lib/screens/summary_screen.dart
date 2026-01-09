@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:pocketa_expense_tracker/models/expense.dart';
 import 'package:pocketa_expense_tracker/providers/summary_provider.dart';
+import 'package:pocketa_expense_tracker/utils/constants.dart';
 import 'package:pocketa_expense_tracker/widgets/loading_indicator.dart';
-import 'package:pocketa_expense_tracker/widgets/category_chip.dart';
 
 class SummaryScreen extends ConsumerStatefulWidget {
   const SummaryScreen({super.key});
@@ -15,6 +16,48 @@ class SummaryScreen extends ConsumerStatefulWidget {
 class _SummaryScreenState extends ConsumerState<SummaryScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+
+  Color _getCategoryColor(Category category) {
+    return AppConstants.categoryColors[category.name] ?? Colors.grey;
+  }
+
+  IconData _getCategoryIcon(Category category) {
+    switch (category) {
+      case Category.food:
+        return Icons.restaurant;
+      case Category.transport:
+        return Icons.directions_car;
+      case Category.shopping:
+        return Icons.shopping_bag;
+      case Category.entertainment:
+        return Icons.movie;
+      case Category.bills:
+        return Icons.receipt;
+      case Category.other:
+        return Icons.category;
+    }
+  }
+
+  Widget _buildCategoryIcon(Category category) {
+    final color = _getCategoryColor(category);
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.2),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: color.withOpacity(0.5),
+          width: 1.5,
+        ),
+      ),
+      child: Icon(
+        _getCategoryIcon(category),
+        color: color,
+        size: 20,
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -126,10 +169,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen>
           const SizedBox(height: 8),
           ...summary.breakdown.map((breakdown) => Card(
                 child: ListTile(
-                  leading: CategoryChip(
-                    category: breakdown.category,
-                    amount: breakdown.amount,
-                  ),
+                  leading: _buildCategoryIcon(breakdown.category),
                   title: Text(breakdown.category.displayName),
                   subtitle: Text('${breakdown.count} expenses'),
                   trailing: Text(
@@ -187,10 +227,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen>
           const SizedBox(height: 8),
           ...summary.breakdown.map((breakdown) => Card(
                 child: ListTile(
-                  leading: CategoryChip(
-                    category: breakdown.category,
-                    amount: breakdown.amount,
-                  ),
+                  leading: _buildCategoryIcon(breakdown.category),
                   title: Text(breakdown.category.displayName),
                   subtitle: Text('${breakdown.count} expenses'),
                   trailing: Text(
@@ -248,10 +285,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen>
           const SizedBox(height: 8),
           ...summary.breakdown.map((breakdown) => Card(
                 child: ListTile(
-                  leading: CategoryChip(
-                    category: breakdown.category,
-                    amount: breakdown.amount,
-                  ),
+                  leading: _buildCategoryIcon(breakdown.category),
                   title: Text(breakdown.category.displayName),
                   subtitle: Text('${breakdown.count} expenses'),
                   trailing: Text(

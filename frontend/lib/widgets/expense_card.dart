@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:pocketa_expense_tracker/models/expense.dart';
-import 'package:pocketa_expense_tracker/widgets/category_chip.dart';
+import 'package:pocketa_expense_tracker/utils/constants.dart';
 
 class ExpenseCard extends StatelessWidget {
   final Expense expense;
@@ -13,11 +13,48 @@ class ExpenseCard extends StatelessWidget {
     this.onTap,
   });
 
+  Color get _categoryColor {
+    return AppConstants.categoryColors[expense.category.name] ?? Colors.grey;
+  }
+
+  IconData _getCategoryIcon(Category category) {
+    switch (category) {
+      case Category.food:
+        return Icons.restaurant;
+      case Category.transport:
+        return Icons.directions_car;
+      case Category.shopping:
+        return Icons.shopping_bag;
+      case Category.entertainment:
+        return Icons.movie;
+      case Category.bills:
+        return Icons.receipt;
+      case Category.other:
+        return Icons.category;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
       child: ListTile(
-        leading: CategoryChip(category: expense.category),
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: _categoryColor.withOpacity(0.2),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: _categoryColor.withOpacity(0.5),
+              width: 1.5,
+            ),
+          ),
+          child: Icon(
+            _getCategoryIcon(expense.category),
+            color: _categoryColor,
+            size: 20,
+          ),
+        ),
         title: Text(
           '₹${expense.amount.toStringAsFixed(2)}',
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
